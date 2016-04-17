@@ -6,13 +6,12 @@ import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.os.Bundle;
 import android.os.CountDownTimer;
 import android.support.v7.app.AppCompatActivity;
-import android.os.Bundle;
 import android.view.Menu;
 import android.view.MenuItem;
 import android.view.View;
-import android.view.View.OnClickListener;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.ProgressBar;
@@ -20,9 +19,9 @@ import android.widget.TextView;
 
 
 /**
- * Created by Andreas Bjärntoft on 2016-04-10.
+ * Created by Andreas Bjärntoft on 2016-04-17.
  */
-public class MainActivity extends AppCompatActivity implements OnClickListener {
+public class DetectionActivity extends AppCompatActivity implements View.OnClickListener {
     private BluetoothReceiver btReceiver;
     private Boolean btReceiverRegistered;
     private BluetoothAdapter btAdapter;
@@ -31,16 +30,16 @@ public class MainActivity extends AppCompatActivity implements OnClickListener {
     // Mätvariabler.
     private String nameBT;
     private int counter;
-    private int counterLimit;
+    private int limitCounter;
+    private short rssiLimit;
     private long pauseTime;
-    private short totalRSSI;
 
     // Gui-komponenter.
     private EditText etName;
-    private EditText etCount;
+    private EditText etLimit;
     private EditText etPause;
     private TextView tvStatusCount;
-    private TextView tvStatusRSSI;
+    private TextView tvStatusLimitCount;
     private ProgressBar spinner;
     private Button btStart;
     private Button btStop;
@@ -49,14 +48,14 @@ public class MainActivity extends AppCompatActivity implements OnClickListener {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        setContentView(R.layout.activity_main);
+        setContentView(R.layout.activity_detection);
 
         // Identifierar gui-komponenter.
         etName = (EditText)findViewById(R.id.name);
-        etCount = (EditText)findViewById(R.id.counts);
+        etLimit = (EditText)findViewById(R.id.limit);
         etPause = (EditText)findViewById(R.id.pause);
         tvStatusCount = (TextView)findViewById(R.id.counts_status);
-        tvStatusRSSI = (TextView)findViewById(R.id.rssi_status);
+        tvStatusLimitCount = (TextView)findViewById(R.id.limitCounts_status);
         spinner = (ProgressBar)findViewById(R.id.progressBar1);
         btStart = (Button)findViewById(R.id.start);
         btStop = (Button)findViewById(R.id.stop);
@@ -119,11 +118,11 @@ public class MainActivity extends AppCompatActivity implements OnClickListener {
         if(v == btStart) {
             // Nollställer variabler.
             counter = 0;
-            totalRSSI = 0;
+            limitCounter = 0;
 
             // Extraherar bt-variabler.
             nameBT = etName.getText().toString();
-            counterLimit = Integer.parseInt(etCount.getText().toString());
+            rssiLimit = Short.parseShort(etLimit.getText().toString());
             pauseTime = Long.parseLong(etPause.getText().toString());
 
             // Startar bt-mätning.
@@ -133,7 +132,7 @@ public class MainActivity extends AppCompatActivity implements OnClickListener {
 
             // Uppdaterar gui.
             setCountStatus("0");
-            setRSSIStatus("0");
+            setLimitCountStatus("0");
 
             makeRunnable(false);
         } else if(v == btStop) {
@@ -159,8 +158,8 @@ public class MainActivity extends AppCompatActivity implements OnClickListener {
     }
 
 
-    private void setRSSIStatus(String string) {
-        tvStatusRSSI.setText(string + " dBm");
+    private void setLimitCountStatus(String string) {
+        tvStatusLimitCount.setText(string + " st");
     }
 
 
@@ -187,8 +186,8 @@ public class MainActivity extends AppCompatActivity implements OnClickListener {
             } else if(BluetoothAdapter.ACTION_DISCOVERY_FINISHED.equals(action)) {
                 //System.out.println("BT-mätning avslutad.");
 
-                // Kontrollerar antalet genomförda mätning samt satt paustid.
-                if(counter < counterLimit && pauseTime != 0) {
+                // Kontrollerar satt paustid.
+                if(pauseTime != 0) {
                     // Pausar innan ny mätning.
                     new CountDownTimer(pauseTime, 1000) {
                         public void onTick(long millisUntilFinished) {
@@ -200,14 +199,8 @@ public class MainActivity extends AppCompatActivity implements OnClickListener {
                             btAdapter.startDiscovery();
                         }
                     }.start();
-                } else if(counter < counterLimit && pauseTime == 0) {
-                    btAdapter.startDiscovery();
                 } else {
-                    // Uppdatera gui.
-                    makeRunnable(true);
-
-                    // Stoppat bt-mätning.
-                    stopReceiver();
+                    btAdapter.startDiscovery();
                 }
             } else if(BluetoothDevice.ACTION_FOUND.equals(action)) {
                 //System.out.println("BT-enhet funnen");
@@ -215,26 +208,24 @@ public class MainActivity extends AppCompatActivity implements OnClickListener {
                 // Identifierar funnen BT-enhet.
                 BluetoothDevice device = (BluetoothDevice) intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE);
                 String name = device.getName();
+                short rssi = intent.getShortExtra(BluetoothDevice.EXTRA_RSSI, Short.MIN_VALUE);
+
+                System.out.println(rssi);
 
                 // Kontrollerar enheten.
                 if(name != null && name.equals(nameBT)) {
                     counter++;
 
-                    // Beräknar RSSI.
-                    short rssi = intent.getShortExtra(BluetoothDevice.EXTRA_RSSI, Short.MIN_VALUE);
-                    totalRSSI += rssi;
-
-                    //System.out.println("Mätning: " + rssi);
-                    //System.out.println("Räknare: " + counter);
-                    //System.out.println("Medelvärde: " + totalRSSI / counter);
-
+                    // Uppdaterar gui.
                     setCountStatus(String.valueOf(counter));
-                    setRSSIStatus(String.valueOf(totalRSSI / counter));
-                }
 
-                // Avbryter mätning.
-                if(counter == counterLimit) {
-                    btAdapter.cancelDiscovery();
+                    // Kontrollerar rssi för enheten.
+                    if(rssi >= -rssiLimit) {
+                        limitCounter++;
+
+                        // Uppdaterar gui.
+                        setLimitCountStatus(String.valueOf(limitCounter));
+                    }
                 }
             }
         }
